@@ -1,21 +1,25 @@
 package ch.endte.syncmatica;
 
+import javax.annotation.Nullable;
+import java.io.*;
+import java.util.Arrays;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 import ch.endte.syncmatica.communication.CommunicationManager;
 import ch.endte.syncmatica.communication.FeatureSet;
+import ch.endte.syncmatica.data.IFileStorage;
+import ch.endte.syncmatica.data.SyncmaticManager;
 import ch.endte.syncmatica.extended_core.PlayerIdentifierProvider;
+import ch.endte.syncmatica.network.client.ClientPlayRegister;
+import ch.endte.syncmatica.network.server.ServerPlayRegister;
 import ch.endte.syncmatica.service.DebugService;
 import ch.endte.syncmatica.service.IService;
 import ch.endte.syncmatica.service.JsonConfiguration;
 import ch.endte.syncmatica.service.QuotaService;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonObject;
 
-import java.io.*;
-import java.util.Arrays;
-
-public class Context {
-
+public class Context
+{
     private final IFileStorage files;
     private final CommunicationManager comMan;
     private final SyncmaticManager synMan;
@@ -28,7 +32,6 @@ public class Context {
     private final QuotaService quota;
     private final DebugService debugService;
     private final PlayerIdentifierProvider playerIdentifierProvider;
-
 
     public Context(
             final IFileStorage fs,
@@ -55,15 +58,26 @@ public class Context {
         this.synMan = synMan;
         synMan.setContext(this);
         server = isServer;
-        if (isServer) {
+        if (isServer)
+        {
             quota = new QuotaService();
-        } else {
+        }
+        else
+        {
             quota = null;
         }
         playerIdentifierProvider = new PlayerIdentifierProvider(this);
         debugService = new DebugService();
         this.litematicFolder = litematicFolder;
-        litematicFolder.mkdirs();
+        if (!litematicFolder.exists())
+        {
+            try
+            {
+                if (!litematicFolder.mkdirs())
+                    Syncmatica.LOGGER.fatal("Context(): Fatal error creating litematic Folder.  Check that Syncmatica has the permissions to do so.");
+            }
+            catch (Exception ignored) {}
+        }
         integratedServer = integrated;
         this.worldFolder = worldFolder;
         loadConfiguration();
@@ -120,14 +134,40 @@ public class Context {
         fs = new FeatureSet(Arrays.asList(Feature.values()));
     }
 
+    public void registerReceivers()
+    {
+        if (this.isServer())
+        {
+            ServerPlayRegister.registerReceivers();
+        }
+        else
+        {
+            ClientPlayRegister.registerReceivers();
+        }
+    }
+    public void unregisterReceivers()
+    {
+        if (this.isServer())
+        {
+            ServerPlayRegister.unregisterReceivers();
+        }
+        else
+        {
+            ClientPlayRegister.unregisterReceivers();
+        }
+    }
     public void startup() {
+        Syncmatica.debug("Context#startup()");
         startupServices();
+        registerReceivers();
         isStarted = true;
         synMan.startup();
     }
 
     public void shutdown() {
+        Syncmatica.debug("Context#shutdown()");
         shutdownServices();
+        unregisterReceivers();
         isStarted = false;
         synMan.shutdown();
     }
@@ -139,15 +179,16 @@ public class Context {
     public File getConfigFolder() {
         if (isServer() && isIntegratedServer()) {
 
-            return new File(worldFolder, Syncmatica.MOD_ID);
+            return new File(worldFolder, Reference.MOD_ID);
         }
-        return new File(new File("."), "config" + File.separator + Syncmatica.MOD_ID);
+        return new File(new File("."), "config" + File.separator + Reference.MOD_ID);
     }
 
     public File getConfigFile() {
         return new File(getConfigFolder(), "config.json");
     }
 
+    @Nullable
     public File getAndCreateConfigFile() throws IOException {
         getConfigFolder().mkdirs();
         final File configFile = getConfigFile();
@@ -176,7 +217,8 @@ public class Context {
                 final Gson gson = new GsonBuilder().setPrettyPrinting().create();
                 final String jsonString = gson.toJson(configuration);
                 writer.write(jsonString);
-            } catch (final Exception e) {
+            } catch (final Exception e)
+            {
                 e.printStackTrace();
             }
         }
@@ -199,7 +241,8 @@ public class Context {
                         return false;
                     }
                 }
-            } catch (final Exception e) {
+            } catch (final Exception e)
+            {
                 e.printStackTrace();
             }
         }
@@ -218,6 +261,7 @@ public class Context {
     }
 
     private void startupServices() {
+        Syncmatica.debug("Context#startupServices()");
         if (quota != null) {
             quota.startup();
         }
@@ -225,6 +269,7 @@ public class Context {
     }
 
     private void shutdownServices() {
+        Syncmatica.debug("Context#shutdownServices()");
         if (quota != null) {
             quota.shutdown();
         }
@@ -232,6 +277,7 @@ public class Context {
     }
 
     public static class DuplicateContextAssignmentException extends RuntimeException {
+        @Serial
         private static final long serialVersionUID = -5147544661160756303L;
 
         public DuplicateContextAssignmentException(final String reason) {
@@ -240,6 +286,7 @@ public class Context {
     }
 
     public static class ContextMismatchException extends RuntimeException {
+        @Serial
         private static final long serialVersionUID = 2769376183212635479L;
 
         public ContextMismatchException(final String reason) {
